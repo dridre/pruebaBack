@@ -1,7 +1,7 @@
 package com.RubenBorque.prueba.service;
 
 import com.RubenBorque.prueba.client.ProductApiClient;
-import com.RubenBorque.prueba.model.ProductDetailDTO;
+import com.RubenBorque.prueba.model.ProductDetail;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -20,7 +20,7 @@ public class SimilarProductsService {
         this.productApiClient = productApiClient;
     }
 
-    public Mono<List<ProductDetailDTO>> getSimilarProducts(String productId) {
+    public Mono<List<ProductDetail>> getSimilarProducts(String productId) {
         logger.info("Getting similar products for product: {}", productId);
 
         // First check if the product exists
@@ -31,13 +31,12 @@ public class SimilarProductsService {
                             .flatMapMany(Flux::fromIterable)
                             // Get details for each similar product ID
                             .flatMap(this::getProductDetailSafely)
-                            // Filter out any null results (failed requests)
-                            .filter(detail -> detail != null)
+                            // Collect results into a list
                             .collectList();
                 });
     }
 
-    private Mono<ProductDetailDTO> getProductDetailSafely(String productId) {
+    private Mono<ProductDetail> getProductDetailSafely(String productId) {
         return productApiClient.getProductDetail(productId)
                 .onErrorResume(error -> {
                     logger.warn("Error getting product detail for ID {}: {}", productId, error.getMessage());

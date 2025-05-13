@@ -49,6 +49,10 @@ La aplicación se basa en una arquitectura de microservicios y utiliza Spring Bo
    ```
    mvn spring-boot:run
    ```
+**Nota para usuarios de Windows**: Si encuentras errores relacionados con la codificación de archivos o MalformedInputException, utiliza el siguiente comando alternativo: 
+   ```
+   mvnw.cmd spring-boot:run -Dmaven.resources.skip=true
+   ```
 
 3. La aplicación estará disponible en: `http://localhost:5000`
 

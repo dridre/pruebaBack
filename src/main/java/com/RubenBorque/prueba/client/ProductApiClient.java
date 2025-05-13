@@ -1,15 +1,16 @@
 package com.RubenBorque.prueba.client;
 
-import com.RubenBorque.prueba.model.ProductDetailDTO;
+import com.RubenBorque.prueba.exception.ExternalServiceException;
+import com.RubenBorque.prueba.exception.ProductNotFoundException;
+import com.RubenBorque.prueba.model.ProductDetail;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -40,30 +41,51 @@ public class ProductApiClient {
                 .retrieve()
                 .bodyToMono(new ParameterizedTypeReference<List<String>>() {})
                 .doOnError(error -> logger.error("Error getting similar product IDs: {}", error.getMessage()))
+                .onErrorResume(WebClientResponseException.NotFound.class, error -> {
+                    logger.error("Product not found: {}", productId);
+                    return Mono.error(new ProductNotFoundException("Product with ID " + productId + " not found"));
+                })
                 .onErrorResume(error -> {
-                    logger.error("Falling back to empty list for similar IDs due to: {}", error.getMessage());
-                    return Mono.just(List.of());
+                    if (!(error instanceof ProductNotFoundException)) {
+                        logger.error("External service error when getting similar IDs: {}", error.getMessage());
+                        return Mono.error(new ExternalServiceException("Error fetching similar products: " + error.getMessage()));
+                    }
+                    return Mono.error(error);
                 });
     }
 
     public Mono<List<String>> getEmptySimilarIds(String productId, Throwable t) {
         logger.warn("Circuit breaker triggered for getSimilarIds. Returning empty list. Error: {}", t.getMessage());
+        if (t instanceof ProductNotFoundException) {
+            return Mono.error(t);
+        }
         return Mono.just(List.of());
     }
 
     @CircuitBreaker(name = "getProductDetail", fallbackMethod = "getProductDetailFallback")
-    public Mono<ProductDetailDTO> getProductDetail(String productId) {
+    public Mono<ProductDetail> getProductDetail(String productId) {
         logger.info("Getting product detail for product: {}", productId);
         return webClient.get()
                 .uri(productDetailPath, productId)
                 .retrieve()
-                .bodyToMono(ProductDetailDTO.class)
-                .doOnError(error -> logger.error("Error getting product detail: {}", error.getMessage()));
+                .bodyToMono(ProductDetail.class)
+                .doOnError(error -> logger.error("Error getting product detail: {}", error.getMessage()))
+                .onErrorResume(WebClientResponseException.NotFound.class, error -> {
+                    logger.error("Product detail not found: {}", productId);
+                    return Mono.error(new ProductNotFoundException("Product with ID " + productId + " not found"));
+                })
+                .onErrorResume(error -> {
+                    if (!(error instanceof ProductNotFoundException)) {
+                        logger.error("External service error when getting product detail: {}", error.getMessage());
+                        return Mono.error(new ExternalServiceException("Error fetching product details: " + error.getMessage()));
+                    }
+                    return Mono.error(error);
+                });
     }
 
-    public Mono<ProductDetailDTO> getProductDetailFallback(String productId, Throwable t) {
+    public Mono<ProductDetail> getProductDetailFallback(String productId, Throwable t) {
         logger.warn("Circuit breaker triggered for getProductDetail. Error: {}", t.getMessage());
-        // Throw a 404 if the product doesn't exist
-        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Product not found or service unavailable");
+        // Propagate the specific exception
+        return Mono.error(t);
     }
 }
